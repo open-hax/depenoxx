@@ -1,5 +1,6 @@
 # TLS overlay for depenoxx
 # Requires Caddyfile in the deploy directory
+# Uses alternate ports (8780/8443) to coexist with other Caddy instances
 
 services:
   depenoxx-ssl:
@@ -8,8 +9,8 @@ services:
       depenoxx:
         condition: service_healthy
     ports:
-      - "80:80"
-      - "443:443"
+      - "8780:80"
+      - "8443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - depenoxx-caddy-data:/data

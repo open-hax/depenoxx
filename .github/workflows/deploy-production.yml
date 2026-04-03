@@ -58,7 +58,7 @@ jobs:
           DEPLOY_PATH: ${{ vars.PRODUCTION_DEPLOY_PATH || '~/devel/services/depenoxx' }}
           DEPLOY_COMPOSE_PROJECT_NAME: depenoxx
           DEPLOY_PUBLIC_HOST: ${{ vars.PRODUCTION_PUBLIC_HOST || 'depenoxx.promethean.rest' }}
-          DEPLOY_ENABLE_TLS: 'true'
+          DEPLOY_ENABLE_TLS: 'false'
           DEPLOY_HEALTH_TIMEOUT_SECONDS: '120'
           DEPLOY_ENV_APPEND: |
             PROJECT_NAME=depenoxx

@@ -126,7 +126,7 @@ jobs:
           DEPLOY_PATH: ${{ vars.TESTING_DEPLOY_PATH || '~/devel/services/depenoxx-testing' }}
           DEPLOY_COMPOSE_PROJECT_NAME: depenoxx-testing
           DEPLOY_PUBLIC_HOST: ${{ vars.TESTING_PUBLIC_HOST || 'testing.depenoxx.promethean.rest' }}
-          DEPLOY_ENABLE_TLS: 'true'
+          DEPLOY_ENABLE_TLS: 'false'
           DEPLOY_HEALTH_TIMEOUT_SECONDS: '120'
           DEPLOY_ENV_APPEND: |
             PROJECT_NAME=depenoxx-testing-pr-${{ needs.testing-eligibility.outputs.pr_number }}

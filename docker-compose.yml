@@ -13,7 +13,7 @@ services:
       WORKSPACE_ROOT: "/workspace"
       PROJECT_NAME: "${DEPENOXX_PROJECT_NAME:-Workspace}"
     ports:
-      - "127.0.0.1:${DEPENOXX_PORT:-8798}:8798"
+      - "${DEPENOXX_PORT:-8798}:8798"
     volumes:
       - ${DEPENOXX_WORKSPACE:-../..}:/workspace
     user: "${DEPENOXX_UID:-1000}:${DEPENOXX_GID:-1000}"
@@ -34,7 +34,11 @@ services:
     restart: unless-stopped
     networks:
       - depenoxx-internal
+      - ai-infra
 
 networks:
   depenoxx-internal:
     driver: bridge
+  ai-infra:
+    external: true
+    name: ai-infra
