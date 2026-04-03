@@ -1,0 +1,91 @@
+name: deploy-staging
+
+on:
+  push:
+    branches:
+      - staging
+  workflow_dispatch:
+
+concurrency:
+  group: depenoxx-staging
+  cancel-in-progress: true
+
+jobs:
+  staging-preflight:
+    name: staging-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+
+  deploy-staging:
+    name: deploy-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - staging-preflight
+    environment: staging
+    steps:
+      - uses: actions/checkout@v5
+      - name: configure staging ssh
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${STAGING_SSH_PRIVATE_KEY}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf 'Host *\n  IdentityFile ~/.ssh/deploy_key\n  IdentitiesOnly yes\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+          touch ~/.ssh/known_hosts
+          ssh-keyscan -H "${STAGING_HOST}" >> ~/.ssh/known_hosts
+        env:
+          STAGING_HOST: ${{ vars.STAGING_SSH_HOST || 'ussy3.promethean.rest' }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      - run: chmod +x scripts/*.sh
+      - name: deploy staging runtime
+        run: ./scripts/deploy-remote.sh
+        env:
+          DEPLOY_HOST: ${{ vars.STAGING_SSH_HOST || 'ussy3.promethean.rest' }}
+          DEPLOY_USER: ${{ vars.STAGING_SSH_USER || 'error' }}
+          DEPLOY_PATH: ${{ vars.STAGING_DEPLOY_PATH || '~/devel/services/depenoxx-staging' }}
+          DEPLOY_COMPOSE_PROJECT_NAME: depenoxx-staging
+          DEPLOY_PUBLIC_HOST: ${{ vars.STAGING_PUBLIC_HOST || 'staging.depenoxx.promethean.rest' }}
+          DEPLOY_ENABLE_TLS: 'true'
+          DEPLOY_HEALTH_TIMEOUT_SECONDS: '120'
+          DEPLOY_ENV_APPEND: |
+            PROJECT_NAME=depenoxx-staging
+      - name: staging deploy failure logs
+        if: failure()
+        run: |
+          ssh ${STAGING_SSH_USER}@${STAGING_HOST} "cd ${STAGING_PATH} && docker compose --project-name depenoxx-staging ps && docker compose --project-name depenoxx-staging logs --tail=200"
+        env:
+          STAGING_HOST: ${{ vars.STAGING_SSH_HOST || 'ussy3.promethean.rest' }}
+          STAGING_SSH_USER: ${{ vars.STAGING_SSH_USER || 'error' }}
+          STAGING_PATH: ${{ vars.STAGING_DEPLOY_PATH || '~/devel/services/depenoxx-staging' }}
+
+  verify-staging:
+    name: verify-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - deploy-staging
+    environment: staging
+    steps:
+      - run: |
+          for attempt in $(seq 1 20); do
+            echo "health-check attempt ${attempt}" >/dev/null
+            if curl -fsS "${STAGING_BASE_URL}/api/health" >/dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          exit 1
+        env:
+          STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.depenoxx.promethean.rest' }}

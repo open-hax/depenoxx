@@ -1,0 +1,23 @@
+# TLS overlay for depenoxx
+# Requires Caddyfile in the deploy directory
+
+services:
+  depenoxx-ssl:
+    image: caddy:2.8-alpine
+    depends_on:
+      depenoxx:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - depenoxx-caddy-data:/data
+      - depenoxx-caddy-config:/config
+    restart: unless-stopped
+    networks:
+      - depenoxx-internal
+
+volumes:
+  depenoxx-caddy-data:
+  depenoxx-caddy-config:

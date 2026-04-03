@@ -1,0 +1,164 @@
+name: deploy-testing
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: depenoxx-testing
+  cancel-in-progress: true
+
+jobs:
+  testing-eligibility:
+    name: testing-eligibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      should_deploy: ${{ steps.evaluate.outputs.should_deploy }}
+      pr_head_sha: ${{ steps.evaluate.outputs.pr_head_sha }}
+      pr_number: ${{ steps.evaluate.outputs.pr_number }}
+    steps:
+      - uses: actions/github-script@v8
+        id: evaluate
+        env:
+          TESTING_ALLOWED_OWNER_LOGINS: ${{ vars.TESTING_ALLOWED_OWNER_LOGINS || '' }}
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const hasTestingLabel = pr.labels.some((label) => label.name === 'testing');
+
+            core.setOutput('pr_head_sha', pr.head.sha);
+            core.setOutput('pr_number', String(pr.number));
+
+            if (!hasTestingLabel) {
+              core.notice('Skipping testing deploy because the PR does not currently carry the `testing` label.');
+              core.setOutput('should_deploy', 'false');
+              return;
+            }
+
+            if (pr.draft) {
+              core.setFailed('Testing deploy requires a ready-for-review PR.');
+              return;
+            }
+
+            if (pr.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed('Testing deploy only runs for same-repository PR heads; fork PRs are not eligible for the shared testing slot.');
+              return;
+            }
+
+            const allowedLogins = (process.env.TESTING_ALLOWED_OWNER_LOGINS || '')
+              .split(/[,\s]+/)
+              .map((item) => item.trim().toLowerCase())
+              .filter(Boolean);
+
+            if (allowedLogins.length === 0) {
+              core.setFailed('Configure repo/org variable TESTING_ALLOWED_OWNER_LOGINS with the allowed org-owner GitHub logins before using the shared testing slot.');
+              return;
+            }
+
+            if (!allowedLogins.includes(pr.user.login.toLowerCase())) {
+              core.setFailed(`Testing deploy is reserved for owner-created PRs. ${pr.user.login} is not in TESTING_ALLOWED_OWNER_LOGINS.`);
+              return;
+            }
+
+            core.setOutput('should_deploy', 'true');
+
+  testing-preflight:
+    name: testing-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - testing-eligibility
+    if: ${{ needs.testing-eligibility.outputs.should_deploy == 'true' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.testing-eligibility.outputs.pr_head_sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+
+  deploy-testing:
+    name: deploy-testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - testing-eligibility
+      - testing-preflight
+    if: ${{ needs.testing-eligibility.outputs.should_deploy == 'true' }}
+    environment: testing
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.testing-eligibility.outputs.pr_head_sha }}
+      - name: configure testing ssh
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${TESTING_SSH_PRIVATE_KEY}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf 'Host *\n  IdentityFile ~/.ssh/deploy_key\n  IdentitiesOnly yes\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+          touch ~/.ssh/known_hosts
+          ssh-keyscan -H "${TESTING_HOST}" >> ~/.ssh/known_hosts
+        env:
+          TESTING_HOST: ${{ vars.TESTING_SSH_HOST || 'ussy2.promethean.rest' }}
+          TESTING_SSH_PRIVATE_KEY: ${{ secrets.TESTING_SSH_PRIVATE_KEY }}
+      - run: chmod +x scripts/*.sh
+      - name: deploy testing runtime
+        run: ./scripts/deploy-remote.sh
+        env:
+          DEPLOY_HOST: ${{ vars.TESTING_SSH_HOST || 'ussy2.promethean.rest' }}
+          DEPLOY_USER: ${{ vars.TESTING_SSH_USER || 'error' }}
+          DEPLOY_PATH: ${{ vars.TESTING_DEPLOY_PATH || '~/devel/services/depenoxx-testing' }}
+          DEPLOY_COMPOSE_PROJECT_NAME: depenoxx-testing
+          DEPLOY_PUBLIC_HOST: ${{ vars.TESTING_PUBLIC_HOST || 'testing.depenoxx.promethean.rest' }}
+          DEPLOY_ENABLE_TLS: 'true'
+          DEPLOY_HEALTH_TIMEOUT_SECONDS: '120'
+          DEPLOY_ENV_APPEND: |
+            PROJECT_NAME=depenoxx-testing-pr-${{ needs.testing-eligibility.outputs.pr_number }}
+      - name: testing deploy failure logs
+        if: failure()
+        run: |
+          ssh ${TESTING_SSH_USER}@${TESTING_HOST} "cd ${TESTING_PATH} && docker compose --project-name depenoxx-testing ps && docker compose --project-name depenoxx-testing logs --tail=200"
+        env:
+          TESTING_HOST: ${{ vars.TESTING_SSH_HOST || 'ussy2.promethean.rest' }}
+          TESTING_SSH_USER: ${{ vars.TESTING_SSH_USER || 'error' }}
+          TESTING_PATH: ${{ vars.TESTING_DEPLOY_PATH || '~/devel/services/depenoxx-testing' }}
+
+  verify-testing:
+    name: verify-testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - testing-eligibility
+      - deploy-testing
+    if: ${{ needs.testing-eligibility.outputs.should_deploy == 'true' }}
+    environment: testing
+    steps:
+      - run: |
+          for attempt in $(seq 1 20); do
+            echo "health-check attempt ${attempt}" >/dev/null
+            if curl -fsS "${TESTING_BASE_URL}/api/health" >/dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          exit 1
+        env:
+          TESTING_BASE_URL: ${{ vars.TESTING_BASE_URL || 'https://testing.depenoxx.promethean.rest' }}
