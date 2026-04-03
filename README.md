@@ -57,3 +57,34 @@ Generated files are written into `dist/` (gitignored):
 - `dist/graphs/<project>/` — DOT, SVG, PNG files
 - `dist/reports/` — report.json, report.md
 - `dist/manifest.json` — project manifest for the UI
+
+## Deployment
+
+depenoxx deploys to Promethean hosts via GitHub Actions:
+
+| Environment | Branch | Domain | Host |
+|-------------|--------|--------|------|
+| Testing | PRs with `testing` label | `testing.depenoxx.promethean.rest` | ussy2 |
+| Staging | `staging` branch | `staging.depenoxx.promethean.rest` | ussy3 |
+| Production | `main` branch | `depenoxx.promethean.rest` | ussy |
+
+### Required GitHub Secrets
+
+- `TESTING_SSH_PRIVATE_KEY` — SSH key for testing host
+- `STAGING_SSH_PRIVATE_KEY` — SSH key for staging host
+- `PRODUCTION_SSH_PRIVATE_KEY` — SSH key for production host
+
+### Required GitHub Variables
+
+- `TESTING_ALLOWED_OWNER_LOGINS` — comma-separated owner logins for testing slot access
+
+### Local Garden
+
+For local development with Docker, use the garden at `services/depenoxx/`:
+
+```bash
+cd services/depenoxx
+cp .env.example .env
+docker compose up -d --build
+# http://127.0.0.1:8798
+```
