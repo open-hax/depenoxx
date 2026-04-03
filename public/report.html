@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>depenoxx · Report</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,200..900;1,200..900&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="./garden.css" />
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <h1>Dependency Report</h1>
+        <div class="sub">isolates · disconnected components · counts</div>
+      </div>
+      <nav>
+        <a class="nav-pill" href="/">Home</a>
+        <a class="nav-pill" href="/viewer.html">Viewer</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h2>Workspace connectivity</h2>
+      <p>This report is generated from <code>package.json</code> internal dependency edges.</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+        <button class="btn primary" id="regen">Regenerate</button>
+        <a class="btn" href="/dist/report.json" target="_blank" rel="noreferrer">Open report.json</a>
+        <a class="btn" href="/dist/reports/report.md" target="_blank" rel="noreferrer">Open report.md</a>
+      </div>
+      <div id="err" style="color:#ffb4b4; margin-top:10px;"></div>
+    </section>
+
+    <section class="panel" style="margin-top:14px;">
+      <div class="panel-head">
+        <div class="panel-title">Summary</div>
+      </div>
+      <div class="panel-body">
+        <div id="summary" style="color:var(--fg1); font-size: 13px;"></div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top:14px;">
+      <div class="panel-head">
+        <div class="panel-title">Repo isolates (no internal edges)</div>
+      </div>
+      <div class="panel-body">
+        <table class="table" id="repoIsolates"></table>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top:14px;">
+      <div class="panel-head">
+        <div class="panel-title">Package isolates (no internal edges)</div>
+      </div>
+      <div class="panel-body">
+        <table class="table" id="pkgIsolates"></table>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top:14px;">
+      <div class="panel-head">
+        <div class="panel-title">Disconnected components (repos)</div>
+      </div>
+      <div class="panel-body">
+        <table class="table" id="components"></table>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    async function fetchJson(url){
+      const r = await fetch(url, { cache: 'no-cache' });
+      if(!r.ok) throw new Error('fetch failed: ' + r.status);
+      return r.json();
+    }
+
+    function escapeHtml(input){
+      return String(input)
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'",'&#039;');
+    }
+
+    function renderTable(table, headers, rows){
+      table.innerHTML = '';
+      const thead = document.createElement('thead');
+      const trh = document.createElement('tr');
+      for(const h of headers){
+        const th = document.createElement('th');
+        th.textContent = h;
+        trh.append(th);
+      }
+      thead.append(trh);
+
+      const tbody = document.createElement('tbody');
+      for(const row of rows){
+        const tr = document.createElement('tr');
+        for(const cell of row){
+          const td = document.createElement('td');
+          td.innerHTML = cell;
+          tr.append(td);
+        }
+        tbody.append(tr);
+      }
+      table.append(tbody);
+    }
+
+    async function load(){
+      const err = document.getElementById('err');
+      try{
+        const report = await fetchJson('/dist/report.json');
+        const summary = document.getElementById('summary');
+        summary.innerHTML = `
+          <div><span class="code">generatedAt</span>: ${escapeHtml(report.generatedAt)}</div>
+          <div><span class="code">repos</span>: ${escapeHtml(report.repos.count)} (with package.json: ${escapeHtml(report.repos.withPackages)})</div>
+          <div><span class="code">repoEdges</span>: ${escapeHtml(report.repos.edges)}</div>
+          <div><span class="code">repoIsolates</span>: ${escapeHtml(report.repos.isolates.length)}</div>
+          <div style="margin-top:6px;"><span class="code">packages</span>: ${escapeHtml(report.packages.count)}</div>
+          <div><span class="code">packageEdges</span>: ${escapeHtml(report.packages.edges)}</div>
+          <div><span class="code">packageIsolates</span>: ${escapeHtml(report.packages.isolates.length)}</div>
+        `;
+
+        renderTable(
+          document.getElementById('repoIsolates'),
+          ['repo', 'note'],
+          report.repos.isolates.map((r) => [
+            `<a href="/viewer.html?project=${encodeURIComponent(report.projectName?.toLowerCase() || 'workspace')}&graph=repos&search=${encodeURIComponent(r)}">${escapeHtml(r)}</a>`,
+            report.repos.withoutPackages.includes(r) ? '<span class="code">no package.json</span>' : ''
+          ])
+        );
+
+        renderTable(
+          document.getElementById('pkgIsolates'),
+          ['package', 'repo'],
+          report.packages.isolates.slice(0, 500).map((p) => [
+            `<a href="/viewer.html?project=${encodeURIComponent(report.projectName?.toLowerCase() || 'workspace')}&graph=packages&search=${encodeURIComponent(p.name)}">${escapeHtml(p.name)}</a>`,
+            escapeHtml(p.repo)
+          ])
+        );
+
+        renderTable(
+          document.getElementById('components'),
+          ['size', 'repos'],
+          report.repos.components.slice(0, 80).map((c) => [
+            escapeHtml(String(c.size)),
+            c.nodes.map((n) => `<div class="code">${escapeHtml(n)}</div>`).join('')
+          ])
+        );
+      }catch(e){
+        err.textContent = e instanceof Error ? e.message : String(e);
+      }
+    }
+
+    document.getElementById('regen')?.addEventListener('click', async () => {
+      const err = document.getElementById('err');
+      err.textContent = '';
+      const r = await fetch('/api/generate', { method: 'POST' });
+      const payload = await r.json().catch(() => ({}));
+      if(!payload.ok){
+        err.textContent = payload.error ?? ('generation failed: ' + payload.exitCode);
+        return;
+      }
+      await load();
+    });
+
+    load();
+  </script>
+</body>
+</html>

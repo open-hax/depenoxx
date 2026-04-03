@@ -1,0 +1,34 @@
+name: depenoxx
+
+services:
+  depenoxx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
+    command: ["node", "src/server.mjs"]
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8798"
+      WORKSPACE_ROOT: "/workspace"
+      PROJECT_NAME: "${DEPENOXX_PROJECT_NAME:-Workspace}"
+    ports:
+      - "127.0.0.1:${DEPENOXX_PORT:-8798}:8798"
+    volumes:
+      - ${DEPENOXX_WORKSPACE:-../..}:/workspace
+    user: "${DEPENOXX_UID:-1000}:${DEPENOXX_GID:-1000}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8798/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped

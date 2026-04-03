@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>depenoxx</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,200..900;1,200..900&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="./garden.css" />
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <h1>depenoxx</h1>
+        <div class="sub">dependency graph generator · find isolates · visualize connectivity</div>
+      </div>
+      <nav>
+        <a class="nav-pill" href="/">Home</a>
+        <a class="nav-pill" href="/report.html">Report</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h2>What this is</h2>
+      <p>
+        A generated atlas of <b>internal</b> dependencies inside a workspace.
+        It answers: <i>what depends on what</i>, and <i>what is still floating alone</i>.
+      </p>
+      <p style="color: var(--muted); font-size: 12px;">
+        If the page is empty, click <b>Regenerate</b> on a card (or POST <code>/api/generate</code>).
+      </p>
+      <div id="garden-error" style="color:#ffb4b4;"></div>
+    </section>
+
+    <section id="garden-grid" class="grid" aria-label="Graphs"></section>
+  </main>
+
+  <script src="./garden.js" type="module"></script>
+</body>
+</html>
